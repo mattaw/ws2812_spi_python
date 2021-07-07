@@ -8,7 +8,7 @@ Please note that an OrangePi Zero w. 512MB of RAM can drive a string of >100 (ho
 On an Ubuntu or Debian system:
 
 ```
-sudo apt update; apt install python3-pip python3-setuptools python3-dev python3-numpy
+sudo dash -c "apt update; apt install python3-pip python3-setuptools python3-dev python3-numpy"
 git clone https://github.com/mattaw/ws2812-spi-python.git
 cd ws2812-spi-python
 python3 -m venv .venv
