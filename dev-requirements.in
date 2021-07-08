@@ -1,0 +1,7 @@
+-r requirements.txt
+mypy
+black
+pytest
+flake8
+data-science-types
+
