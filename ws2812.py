@@ -8,6 +8,7 @@ SPDX Apache License 2.0
 
 import logging
 import time
+from threading import BoundedSemaphore, Event, Thread
 from typing import TYPE_CHECKING
 
 import attr
@@ -15,9 +16,8 @@ import numpy as np
 from spidev import SpiDev
 
 if TYPE_CHECKING:
-    from typing import List, Tuple
+    from typing import List, Optional, Tuple
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -41,14 +41,41 @@ class SPIws2812:
 
     spidev: SpiDev = attr.ib()
     num_leds: int = attr.ib()
-    led_string_ones = attr.ib()
-    led_string_zeros = attr.ib()
-    tx_buf_clear = attr.ib()
-    tx_buf = attr.ib()
+    led_string_ones: np.ndarray = attr.ib()
+    led_string_zeros: np.ndarray = attr.ib()
+    tx_buf_clear: np.ndarray = attr.ib()
+    tx_buf: np.ndarray = attr.ib()
+    tx_thread: "Optional[SimpleTimer]" = attr.ib()
+    tx_thread_stop: Event = attr.ib()
+    tx_array_lock: BoundedSemaphore = attr.ib()
+    fps: int = attr.ib()
+    tx_array: "Optional[np.ndarray]" = attr.ib()
 
     LED_ZERO = 0b1100_0000  # ws2812 "0" 0.15385us * 2 "1's" = 0.308us
     LED_ONE = 0b1111_1100  # ws2812 "1" 0.15385us * 6 "1's" = 0.923us
     RESET_BYTES_COUNT = 42  # 51.7us of flatline output
+
+    class SimpleTimer(Thread):
+        """Runs inside and is responsible for animations.
+
+        It accesses its parent to do things, which is rather
+        suboptimal but made creating it easier.
+        """
+
+        def __init__(self, parent: "SPIws2812"):
+            Thread.__init__(self)
+            self.parent = parent
+            self.index = 0
+
+        def run(self):
+            while not self.parent.tx_thread_stop.wait(1 / self.parent.fps):
+                logger.debug("Writing to LEDs")
+                with self.parent.tx_array_lock:
+                    rows, _ = self.parent.tx_array.shape
+                    if self.index >= rows:
+                        self.index = 0
+                    self.parent.write_array(self.parent.tx_array[self.index])
+                self.index += 1
 
     @classmethod
     def init(cls, spi_bus_cs: "Tuple[int,int]", num_leds: int) -> "SPIws2812":
@@ -63,6 +90,7 @@ class SPIws2812:
         Returns:
             Fully initialized SPIws2812 class, ready to write
         """
+
         spi = SpiDev()
         spi.open(spi_bus_cs[0], spi_bus_cs[1])
         spi.max_speed_hz = 6_500_000
@@ -77,14 +105,22 @@ class SPIws2812:
         )
         tx_buf = np.zeros(cls.RESET_BYTES_COUNT + num_leds * 24, dtype=np.uint8)
 
-        return cls(
+        tx_array_lock = BoundedSemaphore(1)
+        tx_thread_stop = Event()
+        instance = cls(
             spidev=spi,
             num_leds=num_leds,
             led_string_ones=tx_unpacked_ones,
             led_string_zeros=tx_unpacked_zeros,
             tx_buf_clear=tx_buf_clear,
             tx_buf=tx_buf,
+            tx_thread=None,
+            tx_thread_stop=tx_thread_stop,
+            tx_array_lock=tx_array_lock,
+            tx_array=None,
+            fps=60,
         )
+        return instance
 
     def clear(self) -> None:
         """Reset all LEDs to off."""
@@ -118,8 +154,63 @@ class SPIws2812:
         )
         self.spidev.writebytes2(self.tx_buf)
 
+    def write_array(self, data: np.ndarray) -> None:
+        """Set the colors of the led string by a 1D np.Array of uint8s
+
+        Each LED is set in G R B order by the input array. Note, no checking
+        is done so it must by num_leds * 3 long in GRB order already.
+
+        Args:
+            np.Array in uint8 form of num_leds * 3 length in GRB order
+        """
+        tx_data_unpacked = np.unpackbits(data)
+        self.tx_buf[self.RESET_BYTES_COUNT :] = np.where(
+            tx_data_unpacked == 1, self.led_string_ones, self.led_string_zeros
+        )
+        self.spidev.writebytes2(self.tx_buf)
+
+    def start(self) -> None:
+        """Start the worker thread to animate LEDs."""
+        if self.tx_thread is None or not self.tx_thread.is_alive():
+            self.tx_thread = self.SimpleTimer(self)
+            self.tx_thread_stop.clear()
+            self.tx_thread.start()
+            logger.info("Started worker")
+        else:
+            logger.info("Worker already running")
+
+    def stop(self) -> None:
+        """Halt the worker thread if its running."""
+        if self.tx_thread.is_alive():
+            self.tx_thread_stop.set()
+            logger.info("Stopping worker")
+            return
+        logger.info("Worker stopped")
+
+    def breathe(self, color: "List[int]") -> None:
+        """Drive the leds with a breathing pattern based on one color.
+
+        Args:
+            color: List of 3 ints in GRB
+        """
+        cos_lookup = (
+            np.cos(np.linspace(np.pi, np.pi * 3, self.fps)) + 1
+        ) * 0.5  # Starts at intensity zero -> 1
+        color_lookup = np.tile(
+            np.array(color, dtype=np.uint8), (self.fps, self.num_leds)
+        )
+        cos_color_lookup = np.multiply(
+            color_lookup,
+            cos_lookup[:, np.newaxis],
+        ).astype(np.uint8)
+        with self.tx_array_lock:
+            self.tx_array = cos_color_lookup
+        self.start()
+
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
+
     import argparse
 
     parser = argparse.ArgumentParser()
@@ -128,7 +219,7 @@ if __name__ == "__main__":
     spi = SPIws2812.init((1, 0), 4)
 
     lookup_max = 50
-    sin_lookup = (np.sin(np.linspace(0, np.pi * 2, lookup_max)) + 1) * 0.5
+    sin_lookup = (np.cos(np.linspace(np.pi, np.pi * 3, lookup_max)) + 1) * 0.5
     led_colors = np.array([[255, 0, 0]] * 4)
     index = 0
     while True:
