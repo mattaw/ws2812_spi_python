@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Module to drive ws2812 from SPI
 
-Copyright Matthew A. Swabey
+Copyright 2021 Matthew A. Swabey
 
 SPDX Apache License 2.0
 """
@@ -121,17 +121,18 @@ class SPIws2812:
 
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser()
     parser.parse_args()
-    
-    spi = SPIws2812.init((1, 0), 100)
 
-    lookup_max = 100
+    spi = SPIws2812.init((1, 0), 4)
+
+    lookup_max = 50
     sin_lookup = (np.sin(np.linspace(0, np.pi * 2, lookup_max)) + 1) * 0.5
-    led_colors = np.array([[255, 0, 0]] * 100)
+    led_colors = np.array([[255, 0, 0]] * 4)
     index = 0
     while True:
         led_colors_now = led_colors * sin_lookup[index]
         spi.write(led_colors_now)
         index = index + 1 if index < lookup_max - 1 else 0
-        time.sleep(0.01)
+        time.sleep(0.02)
