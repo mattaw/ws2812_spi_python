@@ -123,7 +123,8 @@ class SPIws2812:
         return instance
 
     def clear(self) -> None:
-        """Reset all LEDs to off."""
+        """Reset all LEDs to off, stop worker"""
+        self.stop()
         self.spidev.writebytes2(self.tx_buf_clear)
 
     def write(self, data: "List[List[int]]") -> None:
