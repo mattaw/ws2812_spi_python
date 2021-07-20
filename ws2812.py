@@ -7,6 +7,7 @@ SPDX Apache License 2.0
 """
 
 import logging
+import re
 import time
 from threading import BoundedSemaphore, Event, Thread
 from typing import TYPE_CHECKING
@@ -16,12 +17,17 @@ import numpy as np
 from spidev import SpiDev
 
 if TYPE_CHECKING:
+    from pathlib import Path
     from typing import List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
 
 np.set_printoptions(formatter={"int": lambda i: f"{i:3}"})
+
+
+class SPIws2821BusNotFound(Exception):
+    pass
 
 
 @attr.s
@@ -77,6 +83,17 @@ class SPIws2812:
                     self.parent.write_array(self.parent.tx_array[self.index])
                 self.index += 1
 
+    @staticmethod
+    def bus_cs_from_path(spidev: "Path") -> "Tuple[int, int]":
+        """Take in a path to a spidev device node in the form /dev/spidevX.Y
+        and returns a tuple of (bus, cs) from it"""
+        p = re.compile("/dev/spidev(\d+).(\d+)")
+        match = p.match(str(spidev))
+        if match:
+            bus, cs = match.group(1, 2)
+            return (int(bus), int(cs))
+        raise SPIws2821BusNotFound(f"Path {str(spidev)} is not ")
+
     @classmethod
     def init(cls, spi_bus_cs: "Tuple[int,int]", num_leds: int) -> "SPIws2812":
         """Initialize an instance of this class correctly from supplied info.
@@ -84,8 +101,8 @@ class SPIws2812:
         Use instead of SPIws2812()
 
         Args:
-            spi_bus_cs: Two integers representing the bus and the chip select.
-                        From /dev/spidev1.0 the bus is 1, and the cs is 0
+            spi_bus_cs: (bus, cs) - from /dev/spidev1.0 the bus is 1, and the cs is 0
+                        so (1, 0)
             num_leds: The number of leds in the string of ws2812 leds
         Returns:
             Fully initialized SPIws2812 class, ready to write
@@ -172,21 +189,23 @@ class SPIws2812:
 
     def start(self) -> None:
         """Start the worker thread to animate LEDs."""
+        logger.info("Starting worker")
         if self.tx_thread is None or not self.tx_thread.is_alive():
             self.tx_thread = self.SimpleTimer(self)
             self.tx_thread_stop.clear()
             self.tx_thread.start()
-            logger.info("Started worker")
+            logger.debug("Started worker")
         else:
-            logger.info("Worker already running")
+            logger.debug("Worker already running")
 
     def stop(self) -> None:
         """Halt the worker thread if its running."""
-        if self.tx_thread.is_alive():
+        logger.info("Stopping worker if running")
+        if self.tx_thread is not None and self.tx_thread.is_alive():
             self.tx_thread_stop.set()
-            logger.info("Stopping worker")
+            self.tx_thread.join()
+            logger.debug("Running worker stopped")
             return
-        logger.info("Worker stopped")
 
     def breathe(self, color: "List[int]") -> None:
         """Drive the leds with a breathing pattern based on one color.
