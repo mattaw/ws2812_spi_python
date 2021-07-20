@@ -4,4 +4,4 @@ black
 pytest
 flake8
 data-science-types
-
+types-pytz

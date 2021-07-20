@@ -74,5 +74,7 @@ toml==0.10.2
     #   black
     #   mypy
     #   pytest
+types-pytz==2021.1.0
+    # via -r ./dev-requirements.in
 typing-extensions==3.10.0.0
     # via mypy
