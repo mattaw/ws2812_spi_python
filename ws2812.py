@@ -206,18 +206,17 @@ class SPIws2812:
             logger.debug("Running worker stopped")
             return
 
-    def breathe(self, color: "List[int]") -> None:
+    def breathe(self, color: "Tuple[int, int, int]") -> None:
         """Drive the leds with a breathing pattern based on one color.
 
         Args:
-            color: List of 3 ints in GRB
+            color: Tuple of 3 ints for R,G,B in the range 0-255.
         """
+        grb = (color[1], color[0], color[2])
         cos_lookup = (
             np.cos(np.linspace(np.pi, np.pi * 3, self.fps)) + 1
         ) * 0.5  # Starts at intensity zero -> 1
-        color_lookup = np.tile(
-            np.array(color, dtype=np.uint8), (self.fps, self.num_leds)
-        )
+        color_lookup = np.tile(np.array(grb, dtype=np.uint8), (self.fps, self.num_leds))
         cos_color_lookup = np.multiply(
             color_lookup,
             cos_lookup[:, np.newaxis],
