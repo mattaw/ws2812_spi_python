@@ -189,12 +189,11 @@ class SPIws2812:
 
     def start(self) -> None:
         """Start the worker thread to animate LEDs."""
-        logger.info("Starting worker")
         if self.tx_thread is None or not self.tx_thread.is_alive():
+            logger.info("Starting worker")
             self.tx_thread = self.SimpleTimer(self)
             self.tx_thread_stop.clear()
             self.tx_thread.start()
-            logger.debug("Started worker")
         else:
             logger.debug("Worker already running")
 
