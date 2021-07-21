@@ -68,8 +68,8 @@ class SPIws2812:
         suboptimal but made creating it easier.
         """
 
-        def __init__(self, parent: "SPIws2812"):
-            Thread.__init__(self)
+        def __init__(self, parent: "SPIws2812", *args, **kwargs):
+            Thread.__init__(self, *args, **kwargs)
             self.parent = parent
             self.index = 0
 
@@ -191,7 +191,7 @@ class SPIws2812:
         """Start the worker thread to animate LEDs."""
         if self.tx_thread is None or not self.tx_thread.is_alive():
             logger.info("Starting worker")
-            self.tx_thread = self.SimpleTimer(self)
+            self.tx_thread = self.SimpleTimer(self, name="LED-Worker")
             self.tx_thread_stop.clear()
             self.tx_thread.start()
         else:
