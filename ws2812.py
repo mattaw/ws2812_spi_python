@@ -13,8 +13,8 @@ from threading import BoundedSemaphore, Event, Thread
 from typing import TYPE_CHECKING
 
 import attr
-import numpy as np
-from spidev import SpiDev
+import numpy as np  # type: ignore
+from spidev import SpiDev  # type: ignore
 
 if TYPE_CHECKING:
     from pathlib import Path
