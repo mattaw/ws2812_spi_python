@@ -58,7 +58,8 @@ class SPIws2812Config:
         if not value.is_char_device():
             raise ValueError(f"Path '{value}' is not a character device")
         try:
-            _ = value.open(mode="w")
+            f = value.open(mode="w")
+            f.close()
         except OSError:
             raise ValueError(f"Char device '{value}' cannot be opened read+write")
 
