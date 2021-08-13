@@ -9,18 +9,37 @@ SPDX Apache License 2.0
 import logging
 import re
 import time
+from ipaddress import IPv4Address, IPv6Address, ip_address
+from pathlib import Path
 from threading import BoundedSemaphore, Event, Thread
-from typing import TYPE_CHECKING
+from typing import Any, ClassVar, Dict, List, Optional, Tuple, Union
 
 import attr
 import numpy as np  # type: ignore
+import pendulum
+from cattr import Converter
+from pendulum import DateTime
 from spidev import SpiDev  # type: ignore
 
-if TYPE_CHECKING:
-    from pathlib import Path
-    from typing import List, Optional, Tuple
-
 logger = logging.getLogger(__name__)
+
+
+def to_iso8601(datetime: DateTime) -> str:
+    return datetime.to_iso8601_string()
+
+
+IPType = Union[IPv4Address, IPv6Address]
+
+converter = Converter()
+converter.register_unstructure_hook(Path, str)
+converter.register_structure_hook(Path, lambda pathstr, _: Path(pathstr))
+converter.register_unstructure_hook(DateTime, to_iso8601)
+converter.register_structure_hook(DateTime, lambda isostr, _: pendulum.parse(isostr))
+converter.register_unstructure_hook(IPv4Address, str)
+converter.register_structure_hook(IPv4Address, lambda ipstr, _: ip_address(ipstr))
+converter.register_unstructure_hook(IPv6Address, str)
+converter.register_structure_hook(IPv6Address, lambda ipstr, _: ip_address(ipstr))
+converter.register_structure_hook(IPType, lambda ipstr, _: ip_address(ipstr))
 
 
 np.set_printoptions(formatter={"int": lambda i: f"{i:3}"})
@@ -28,6 +47,53 @@ np.set_printoptions(formatter={"int": lambda i: f"{i:3}"})
 
 class SPIws2821BusNotFound(Exception):
     pass
+
+
+@attr.s
+class SPIws2812Config:
+    spidev: Path = attr.ib()
+
+    @spidev.validator
+    def _check_spidev(self, attribute, value: Path):
+        if not value.is_char_device():
+            raise ValueError(f"Path '{value}' is not a character device")
+        try:
+            _ = value.open(mode="w")
+        except OSError:
+            raise ValueError(f"Char device '{value}' cannot be opened read+write")
+
+    num_leds: int = attr.ib()
+
+    @num_leds.validator
+    def _check_num_leds(self, attribute, value: int):
+        if value <= 0:
+            raise ValueError("num_leds must be an integer greater than one")
+
+    bus: int = attr.ib()
+
+    @bus.default
+    def _get_bus(self):
+        m = self.bus_cs_pattern.match(str(self.spidev))
+        if m:
+            return int(m.group(1))
+        else:
+            raise ValueError(
+                f"Failed to extract bus (first digit) from spidev '{self.spidev}'"
+            )
+
+    cs: int = attr.ib()
+
+    @cs.default
+    def _get_cs(self):
+        m = self.bus_cs_pattern.match(str(self.spidev))
+        if m:
+            return int(m.group(2))
+        else:
+            raise ValueError(
+                f"Failed to extract cs (second digit) from spidev '{self.spidev}'"
+            )
+
+    bus_cs_pattern: ClassVar[re.Pattern] = re.compile("/dev/spidev(\d+).(\d+)")
 
 
 @attr.s
@@ -83,16 +149,10 @@ class SPIws2812:
                     self.parent.write_array(self.parent.tx_array[self.index])
                 self.index += 1
 
-    @staticmethod
-    def bus_cs_from_path(spidev: "Path") -> "Tuple[int, int]":
-        """Take in a path to a spidev device node in the form /dev/spidevX.Y
-        and returns a tuple of (bus, cs) from it"""
-        p = re.compile("/dev/spidev(\d+).(\d+)")
-        match = p.match(str(spidev))
-        if match:
-            bus, cs = match.group(1, 2)
-            return (int(bus), int(cs))
-        raise SPIws2821BusNotFound(f"Path {str(spidev)} is not ")
+    @classmethod
+    def init_from_dict(cls, config_dict: "Dict[str, Any]") -> "SPIws2812":
+        config = converter.structure(config_dict, SPIws2812Config)
+        return cls.init((config.bus, config.cs), config.num_leds)
 
     @classmethod
     def init(cls, spi_bus_cs: "Tuple[int,int]", num_leds: int) -> "SPIws2812":
