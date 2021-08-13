@@ -142,7 +142,6 @@ class SPIws2812:
 
         def run(self):
             while not self.parent.tx_thread_stop.wait(1 / self.parent.fps):
-                logger.debug("Writing to LEDs")
                 with self.parent.tx_array_lock:
                     rows, _ = self.parent.tx_array.shape
                     if self.index >= rows:
