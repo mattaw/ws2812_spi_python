@@ -55,13 +55,8 @@ class SPIws2812Config:
 
     @spidev.validator
     def _check_spidev(self, attribute, value: Path):
-        if not value.is_char_device():
-            raise ValueError(f"Path '{value}' is not a character device")
-        try:
-            f = value.open(mode="w")
-            f.close()
-        except OSError:
-            raise ValueError(f"Char device '{value}' cannot be opened read+write")
+        if not value.exists():
+            raise ValueError(f"Path '{value}' does not exist")
 
     num_leds: int = attr.ib()
 
@@ -169,7 +164,11 @@ class SPIws2812:
         """
 
         spi = SpiDev()
-        spi.open(spi_bus_cs[0], spi_bus_cs[1])
+        try:
+            spi.open(spi_bus_cs[0], spi_bus_cs[1])
+        except OSError as e:
+            logger.error("Failed to open spidev", exc_info=e)
+            exit(-1)
         spi.max_speed_hz = 6_500_000
         spi.mode = 0b00
         spi.lsbfirst = False
