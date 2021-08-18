@@ -195,7 +195,7 @@ class SPIws2812:
             tx_thread_stop=tx_thread_stop,
             tx_array_lock=tx_array_lock,
             tx_array=None,
-            fps=60,
+            fps=30,
         )
         return instance
 
@@ -249,40 +249,83 @@ class SPIws2812:
 
     def start(self) -> None:
         """Start the worker thread to animate LEDs."""
+        if self.tx_thread_stop.is_set():
+            logger.info("Worker: not starting as stop set")
+            return
         if self.tx_thread is None or not self.tx_thread.is_alive():
-            logger.info("Starting worker")
+            logger.info("Worker: starting")
             self.tx_thread = self.SimpleTimer(self, name="LED-Worker")
             self.tx_thread_stop.clear()
             self.tx_thread.start()
         else:
-            logger.debug("Worker already running")
+            logger.debug("Worker: already running")
 
     def stop(self) -> None:
         """Halt the worker thread if its running."""
-        logger.info("Stopping worker if running")
+        logger.info("Worker: stopping if running")
         if self.tx_thread is not None and self.tx_thread.is_alive():
             self.tx_thread_stop.set()
             self.tx_thread.join()
-            logger.debug("Running worker stopped")
+            logger.debug("Worker: stopped")
             return
 
-    def breathe(self, color: "Tuple[int, int, int]") -> None:
+    @staticmethod
+    def _parse_color(color: "Tuple[int, int, int]") -> "Tuple[int, int, int]":
+        grb = [color[1], color[0], color[2]]  # reorder for WS2812 GRB
+        grb = [0 if c < 0 else c for c in grb]  # limit min to 0
+        grb = [255 if c > 255 else c for c in grb]  # limit max max 25
+        return (grb[0], grb[1], grb[2])
+
+    def breathe(self, color: "Tuple[int, int, int]", hz: float = 1) -> None:
         """Drive the leds with a breathing pattern based on one color.
 
         Args:
             color: Tuple of 3 ints for R,G,B in the range 0-255.
+            hz: cycles / second of the pattern
         """
-        grb = (color[1], color[0], color[2])
+        frames = int(self.fps / hz)
+        if frames < 6:
+            logger.warn("Cycle time (hz) to fast, clipping")
+            frames = 6
+        grb = self._parse_color(color)
         cos_lookup = (
-            np.cos(np.linspace(np.pi, np.pi * 3, self.fps)) + 1
+            np.cos(np.linspace(np.pi, np.pi * 3, frames)) + 1
         ) * 0.5  # Starts at intensity zero -> 1
-        color_lookup = np.tile(np.array(grb, dtype=np.uint8), (self.fps, self.num_leds))
+        color_lookup = np.tile(np.array(grb, dtype=np.uint8), (frames, self.num_leds))
         cos_color_lookup = np.multiply(
             color_lookup,
             cos_lookup[:, np.newaxis],
         ).astype(np.uint8)
         with self.tx_array_lock:
-            self.tx_array = cos_color_lookup
+            self.tx_array = np.copy(cos_color_lookup)
+        self.start()
+
+    def chase(
+        self, color: "Tuple[int, int, int]", hz: float = 1, clockwise=True
+    ) -> None:
+        """Chase the led color around the ring in hz complete circuits / s
+
+        Args:
+            color: Tuple of 3 ints for R,G,B in the range 0-255.
+            hz: cycles / second of the pattern
+        """
+        frames = int(self.fps / hz)
+        rem = frames % self.num_leds
+        frames = frames + (self.num_leds - rem)
+        frames_per_led = int(frames / self.num_leds)
+        logger.debug("Calc tot frames: '%s', frames/led: '%s'", frames, frames_per_led)
+        grb = self._parse_color(color)
+        lookup = np.zeros((frames, self.num_leds * 3), dtype=np.uint8)
+        led = np.array(grb, dtype=np.uint8)
+        for f in range(frames):
+            start = (f // frames_per_led) * 3
+            finish = (f // frames_per_led + 1) * 3
+            np.copyto(lookup[f, start:finish], led)
+        with self.tx_array_lock:
+            if clockwise:
+                self.tx_array = np.copy(np.flipud(lookup))
+            else:
+                self.tx_array = np.copy(lookup)
         self.start()
 
 
