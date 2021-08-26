@@ -89,7 +89,7 @@ class SPIws2812Config:
                 f"Failed to extract cs (second digit) from spidev '{self.spidev}'"
             )
 
-    bus_cs_pattern: ClassVar[re.Pattern] = re.compile("/dev/spidev(\d+).(\d+)")
+    bus_cs_pattern: ClassVar[re.Pattern] = re.compile(r"/dev/spidev(\d+).(\d+)")
 
 
 @attr.s
@@ -99,7 +99,8 @@ class SPIws2812:
     Notes:
         The MOSI line idles high. This causes the first LED to be green most of
         the time as the MSB of the GRB 24 bit code is seen as a "1". Clear it out
-        by appending a bus reset of RESET_BYTES_COUNT of 0b0 bytes on the front of any transmission.
+        by appending a bus reset of RESET_BYTES_COUNT of 0b0 bytes on the front of any
+        transmission.
 
         This class uses RESET_BYTES_COUNT of 0b0 bytes + 24 bytes for each led,
         8 green, 8 red and 8 blue.
@@ -138,10 +139,11 @@ class SPIws2812:
         def run(self):
             while not self.parent.tx_thread_stop.wait(1 / self.parent.fps):
                 with self.parent.tx_array_lock:
-                    rows, _ = self.parent.tx_array.shape
-                    if self.index >= rows:
-                        self.index = 0
-                    self.parent.write_array(self.parent.tx_array[self.index])
+                    if self.parent.tx_array is not None:
+                        rows, _ = self.parent.tx_array.shape
+                        if self.index >= rows:
+                            self.index = 0
+                        self.parent.write_array(self.parent.tx_array[self.index])
                 self.index += 1
 
     @classmethod
