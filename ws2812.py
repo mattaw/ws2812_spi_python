@@ -170,7 +170,7 @@ class SPIws2812:
             spi.open(spi_bus_cs[0], spi_bus_cs[1])
         except OSError as e:
             logger.error("Failed to open spidev", exc_info=e)
-            exit(-1)
+            raise SPIws2821BusNotFound
         spi.max_speed_hz = 6_500_000
         spi.mode = 0b00
         spi.lsbfirst = False
@@ -268,7 +268,8 @@ class SPIws2812:
             self.tx_thread_stop.set()
             self.tx_thread.join()
             logger.debug("Worker: stopped")
-            return
+        self.spidev.close()
+        return
 
     @staticmethod
     def _parse_color(color: "Tuple[int, int, int]") -> "Tuple[int, int, int]":
