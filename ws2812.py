@@ -227,7 +227,7 @@ class SPIws2812:
             del data[length_diff:]
         tx_data = np.array(data, dtype=np.uint8).ravel()
         logger.debug("%s", tx_data)
-        tx_data_unpacked = np.unpackbits(tx_data)
+        tx_data_unpacked = np.unpackbits(tx_data)  # type: ignore
         self.tx_buf[self.RESET_BYTES_COUNT :] = np.where(
             tx_data_unpacked == 1, self.led_string_ones, self.led_string_zeros
         )
@@ -242,7 +242,7 @@ class SPIws2812:
         Args:
             np.Array in uint8 form of num_leds * 3 length in GRB order
         """
-        tx_data_unpacked = np.unpackbits(data)
+        tx_data_unpacked = np.unpackbits(data)  # type: ignore
         self.tx_buf[self.RESET_BYTES_COUNT :] = np.where(
             tx_data_unpacked == 1, self.led_string_ones, self.led_string_zeros
         )
@@ -290,13 +290,16 @@ class SPIws2812:
             logger.warn("Cycle time (hz) to fast, clipping")
             frames = 6
         grb = self._parse_color(color)
+        # Starts at intensity zero -> 1
         cos_lookup = (
-            np.cos(np.linspace(np.pi, np.pi * 3, frames)) + 1
-        ) * 0.5  # Starts at intensity zero -> 1
-        color_lookup = np.tile(np.array(grb, dtype=np.uint8), (frames, self.num_leds))
-        cos_color_lookup = np.multiply(
+            np.cos(np.linspace(np.pi, np.pi * 3, frames)) + 1  # type: ignore
+        ) * 0.5  # type: ignore
+        color_lookup = np.tile(
+            np.array(grb, dtype=np.uint8), [frames, self.num_leds]  # type: ignore
+        )
+        cos_color_lookup = np.multiply(  # type: ignore
             color_lookup,
-            cos_lookup[:, np.newaxis],
+            cos_lookup[:, np.newaxis],  # type: ignore
         ).astype(np.uint8)
         with self.tx_array_lock:
             self.tx_array = np.copy(cos_color_lookup)
@@ -318,14 +321,14 @@ class SPIws2812:
         logger.debug("Calc tot frames: '%s', frames/led: '%s'", frames, frames_per_led)
         grb = self._parse_color(color)
         lookup = np.zeros((frames, self.num_leds * 3), dtype=np.uint8)
-        led = np.array(grb, dtype=np.uint8)
+        led = np.array(grb, dtype=np.uint8)  # type: ignore
         for f in range(frames):
             start = (f // frames_per_led) * 3
             finish = (f // frames_per_led + 1) * 3
-            np.copyto(lookup[f, start:finish], led)
+            np.copyto(lookup[f, start:finish], led)  # type: ignore
         with self.tx_array_lock:
             if clockwise:
-                self.tx_array = np.copy(np.flipud(lookup))
+                self.tx_array = np.copy(np.flipud(lookup))  # type: ignore
             else:
                 self.tx_array = np.copy(lookup)
         self.start()
@@ -342,11 +345,13 @@ if __name__ == "__main__":
     spi = SPIws2812.init((1, 0), 4)
 
     lookup_max = 50
-    sin_lookup = (np.cos(np.linspace(np.pi, np.pi * 3, lookup_max)) + 1) * 0.5
+    sin_lookup = (np.cos(np.linspace(np.pi, np.pi * 3, lookup_max)) + 1) * 0.5  # type: ignore
     led_colors = np.array([[255, 0, 0]] * 4)
     index = 0
     while True:
-        led_colors_now = led_colors * sin_lookup[index]
-        spi.write(led_colors_now)
+        led_colors_now = led_colors * sin_lookup[index]  # type: ignore
+        spi.write(
+            [[int(led_colors_now[0]), int(led_colors_now[1]), int(led_colors_now[2])]]
+        )
         index = index + 1 if index < lookup_max - 1 else 0
         time.sleep(0.02)
