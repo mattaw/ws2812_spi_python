@@ -11,9 +11,9 @@ attrs==21.2.0
     #   -r ./requirements.txt
     #   cattrs
     #   pytest
-black==21.6b0
+black==21.7b0
     # via -r ./dev-requirements.in
-cattrs==1.7.1
+cattrs==1.8.0
     # via -r ./requirements.txt
 click==8.0.1
     # via
@@ -33,11 +33,11 @@ mypy-extensions==0.4.3
     # via
     #   black
     #   mypy
-numpy==1.21.0
+numpy==1.17.4
     # via -r ./requirements.txt
 packaging==21.0
     # via pytest
-pathspec==0.8.1
+pathspec==0.9.0
     # via black
 pendulum==2.1.2
     # via -r ./requirements.txt
@@ -53,7 +53,7 @@ pyparsing==2.4.7
     # via packaging
 pytest==6.2.4
     # via -r ./dev-requirements.in
-python-dateutil==2.8.1
+python-dateutil==2.8.2
     # via
     #   -r ./requirements.txt
     #   pendulum
@@ -61,7 +61,7 @@ pytzdata==2020.1
     # via
     #   -r ./requirements.txt
     #   pendulum
-regex==2021.7.6
+regex==2021.8.28
     # via black
 six==1.16.0
     # via
@@ -71,10 +71,11 @@ spidev==3.5
     # via -r ./requirements.txt
 toml==0.10.2
     # via
-    #   black
     #   mypy
     #   pytest
-types-pytz==2021.1.0
+tomli==1.2.1
+    # via black
+types-pytz==2021.1.2
     # via -r ./dev-requirements.in
-typing-extensions==3.10.0.0
+typing-extensions==3.10.0.1
     # via mypy
