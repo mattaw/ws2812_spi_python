@@ -7,6 +7,7 @@ SPDX Apache License 2.0
 """
 
 import logging
+import math
 import re
 import time
 from ipaddress import IPv4Address, IPv6Address, ip_address
@@ -120,9 +121,9 @@ class SPIws2812:
     fps: int = attr.ib()
     tx_array: "Optional[np.ndarray]" = attr.ib()
 
-    LED_ZERO = 0b1100_0000  # ws2812 "0" 0.15385us * 2 "1's" = 0.308us
-    LED_ONE = 0b1111_1100  # ws2812 "1" 0.15385us * 6 "1's" = 0.923us
-    RESET_BYTES_COUNT = 42  # 51.7us of flatline output
+    LED_ZERO: ClassVar[int] = 0b1100_0000  # ws2812 "0" 0.15385us * 2 "1's" = 0.308us
+    LED_ONE: ClassVar[int] = 0b1111_1100  # ws2812 "1" 0.15385us * 6 "1's" = 0.923us
+    RESET_BYTES_COUNT: ClassVar[int] = 42  # 51.7us of flatline output
 
     class SimpleTimer(Thread):
         """Runs inside and is responsible for animations.
@@ -167,6 +168,7 @@ class SPIws2812:
 
         spi = SpiDev()
         try:
+            logger.debug("SPI BUS %d CS %s", spi_bus_cs[0], spi_bus_cs[1])
             spi.open(spi_bus_cs[0], spi_bus_cs[1])
         except OSError as e:
             logger.error("Failed to open spidev", exc_info=e)
@@ -202,8 +204,8 @@ class SPIws2812:
 
     def clear(self) -> None:
         """Reset all LEDs to off, stop worker"""
-        self.stop()
         self.spidev.writebytes2(self.tx_buf_clear)
+        self.stop()
 
     def write(self, data: "List[List[int]]") -> None:
         """Set the colors of the LED string.
@@ -256,7 +258,6 @@ class SPIws2812:
         if self.tx_thread is None or not self.tx_thread.is_alive():
             logger.info("Worker: starting")
             self.tx_thread = self.SimpleTimer(self, name="LED-Worker")
-            self.tx_thread_stop.clear()
             self.tx_thread.start()
         else:
             logger.debug("Worker: already running")
@@ -267,8 +268,8 @@ class SPIws2812:
         if self.tx_thread is not None and self.tx_thread.is_alive():
             self.tx_thread_stop.set()
             self.tx_thread.join()
+            self.tx_thread_stop.clear()
             logger.debug("Worker: stopped")
-        self.spidev.close()
         return
 
     @staticmethod
@@ -278,7 +279,7 @@ class SPIws2812:
         grb = [255 if c > 255 else c for c in grb]  # limit max max 25
         return (grb[0], grb[1], grb[2])
 
-    def breathe(self, color: "Tuple[int, int, int]", hz: float = 1) -> None:
+    def breathe(self, color: "Tuple[int, int, int]", hz: float = 0.5) -> None:
         """Drive the leds with a breathing pattern based on one color.
 
         Args:
@@ -306,7 +307,7 @@ class SPIws2812:
         self.start()
 
     def chase(
-        self, color: "Tuple[int, int, int]", hz: float = 1, clockwise=True
+        self, color: "Tuple[int, int, int]", hz: float = 0.5, clockwise=True
     ) -> None:
         """Chase the led color around the ring in hz complete circuits / s
 
@@ -315,10 +316,14 @@ class SPIws2812:
             hz: cycles / second of the pattern
         """
         frames = int(self.fps / hz)
-        rem = frames % self.num_leds
-        frames = frames + (self.num_leds - rem)
-        frames_per_led = int(frames / self.num_leds)
-        logger.debug("Calc tot frames: '%s', frames/led: '%s'", frames, frames_per_led)
+        frames_per_led = math.ceil(frames / self.num_leds)
+        frames = frames_per_led * self.num_leds
+        logger.debug(
+            "Hz: '%f' Calc tot frames: '%d', frames/led: '%d'",
+            hz,
+            frames,
+            frames_per_led,
+        )
         grb = self._parse_color(color)
         lookup = np.zeros((frames, self.num_leds * 3), dtype=np.uint8)
         led = np.array(grb, dtype=np.uint8)  # type: ignore
